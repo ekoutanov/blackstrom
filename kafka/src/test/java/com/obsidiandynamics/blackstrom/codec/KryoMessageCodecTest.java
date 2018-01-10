@@ -1,0 +1,159 @@
+package com.obsidiandynamics.blackstrom.codec;
+
+import static org.junit.Assert.*;
+
+import java.util.*;
+
+import org.junit.*;
+import org.junit.rules.*;
+
+import com.obsidiandynamics.blackstrom.model.*;
+import com.obsidiandynamics.indigo.util.*;
+
+public class KryoMessageCodecTest implements TestSupport {
+  private static void logEncoded(String encoded) {
+    if (LOG) LOG_STREAM.format("encoded %s\n", encoded);
+  }
+  
+  private static void logReencoded(String reencoded) {
+    if (LOG) LOG_STREAM.format("re-encoded %s\n", reencoded);
+  }
+  
+  private static void logDecoded(Message m, Object p) {
+    if (LOG) LOG_STREAM.format("decoded %s (type=%s)\n", m, (p != null ? p.getClass().getSimpleName() : "n/a"));
+  }
+  
+  @Rule 
+  public ExpectedException thrown = ExpectedException.none();
+  
+  @Test
+  public void testNominationNullProposal() throws Exception {
+    final Message m = new Nomination("N100", new String[] {"a", "b"}, null, 1000).withSource("test");
+    MessageCodec c;
+    
+    c = new KryoMessageCodec();
+    final byte[] encoded = c.encode(m);
+
+    final Nomination d1 = (Nomination) c.decode(encoded);
+    assertEquals(m, d1);
+    
+    final byte[] reencoded = c.encode(d1);
+    assertArrayEquals(encoded, reencoded);
+
+    c = new KryoMessageCodec();
+    final Nomination d2 = (Nomination) c.decode(reencoded);
+    logDecoded(d2, d2.getProposal());
+    assertEquals(m, d2);
+  }
+  
+  @Test
+  public void testCodecBenchmark() throws Exception {
+    final int runs = 100;
+    final Message m = new Nomination("N100", new String[] {"a", "b"}, null, 1000).withSource("test");
+    final MessageCodec c = new KryoMessageCodec();
+    
+    final long took = TestSupport.tookThrowing(() -> {
+      for (int i = 0; i < runs; i++) {
+        final byte[] encoded = c.encode(m);
+        c.decode(encoded);
+      }
+    });
+    
+    System.out.format("Codec: %,d took %,d ms, %,.0f msgs/sec\n", 
+                      runs, took, (float) runs / took * 1000);
+  }
+  
+  @Test
+  public void testNominationLongBallotId() throws Exception {
+    final Message m = new Nomination(101L, new String[] {"a", "b"}, null, 1000).withSource("test");
+    MessageCodec c;
+    
+    c = new KryoMessageCodec();
+    final byte[] encoded = c.encode(m);
+
+    final Nomination d1 = (Nomination) c.decode(encoded);
+    logDecoded(d1, d1.getProposal());
+    assertEquals(m, d1);
+    
+    final byte[] reencoded = c.encode(d1);
+    assertArrayEquals(encoded, reencoded);
+
+    c = new KryoMessageCodec();
+    final Nomination d2 = (Nomination) c.decode(reencoded);
+    logDecoded(d2, d2.getProposal());
+    assertEquals(m, d2);
+  }
+
+  @Test
+  public void testNominationNonNullProposal() throws Exception {
+    final Animal<?> a = new Dog().named("Rover").withFriend(new Cat().named("Misty"));
+    final Nomination m = new Nomination("N100", new String[] {"a", "b"}, a, 1000);
+    MessageCodec c;
+
+    c = new KryoMessageCodec();
+    final byte[] encoded = c.encode(m);
+    
+    final Nomination d1 = (Nomination) c.decode(encoded);
+    logDecoded(d1, d1.getProposal());
+    assertNotNull(d1.getProposal());
+//    assertEquals(LinkedHashMap.class, d1.getProposal().getClass()); //TODO
+    
+    final byte[] reencoded = c.encode(d1);
+    assertArrayEquals(encoded, reencoded);
+    
+    c = new KryoMessageCodec();
+    final Nomination d2 = (Nomination) c.decode(reencoded);
+    logDecoded(d2, d2.getProposal());
+    assertEquals(m, d2);
+  }
+
+  @Test
+  public void testVoteNonNullMetadata() throws Exception {
+    final Animal<?> a = new Dog().named("Rex").withFriend(new Cat().named("Tigger"));
+    final Vote m = new Vote("V100", new Response("test-cohort", Pledge.ACCEPT, a));
+    MessageCodec c;
+
+    c = new KryoMessageCodec();
+    final byte[] encoded = c.encode(m);
+    
+    final Vote d1 = (Vote) c.decode(encoded);
+    logDecoded(d1, d1.getResponse().getMetadata());
+    assertNotNull(d1.getResponse().getMetadata());
+//    assertEquals(LinkedHashMap.class, d1.getResponse().getMetadata().getClass()); //TODO
+    
+    final byte[] reencoded = c.encode(d1);
+    assertArrayEquals(encoded, reencoded);
+    
+    c = new KryoMessageCodec();
+    final Vote d2 = (Vote) c.decode(reencoded);
+    logDecoded(d2, d2.getResponse().getMetadata());
+    assertEquals(m, d2);
+  }
+
+  @Test
+  public void testOutcomeMixedMetadata() throws Exception {
+    final Animal<?> a = new Dog().named("Rex").withFriend(new Cat().named("Tigger"));
+    final Response ra = new Response("test-cohort-a", Pledge.REJECT, a);
+    final Response rb = new Response("test-cohort-b", Pledge.ACCEPT, null);
+    final Outcome m = new Outcome("O100", Verdict.ABORT, new Response[] {ra, rb});
+    MessageCodec c;
+
+    c = new KryoMessageCodec();
+    final byte[] encoded = c.encode(m);
+    
+    final Outcome d1 = (Outcome) c.decode(encoded);
+    logDecoded(d1, d1.getResponses()[0].getMetadata());
+    assertEquals(2, d1.getResponses().length);
+    assertNotNull(d1.getResponses()[0].getMetadata());
+//    assertEquals(LinkedHashMap.class, d1.getResponses()[0].getMetadata().getClass()); //TODO
+    assertNull(d1.getResponses()[1].getMetadata());
+    
+    final byte[] reencoded = c.encode(d1);
+    assertArrayEquals(encoded, reencoded);
+    
+    c = new KryoMessageCodec();
+    final Outcome d2 = (Outcome) c.decode(reencoded);
+    logDecoded(d2, d2.getResponses()[0].getMetadata());
+    assertEquals(m, d2);
+  }
+}

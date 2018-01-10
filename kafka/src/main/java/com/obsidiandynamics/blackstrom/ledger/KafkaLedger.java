@@ -38,7 +38,7 @@ public final class KafkaLedger implements Ledger {
     
     final Properties props = new PropertiesBuilder()
         .with("key.serializer", StringSerializer.class.getName())
-        .with("value.serializer", KafkaJacksonMessageSerializer.class.getName())
+        .with("value.serializer", KafkaKryoMessageSerializer.class.getName())
         .with("acks", "all")
         .with("max.in.flight.requests.per.connection", 1)
         .with("retries", Integer.MAX_VALUE)
@@ -71,7 +71,7 @@ public final class KafkaLedger implements Ledger {
         .with("session.timeout.ms", 6_000)
         .with("heartbeat.interval.ms", 2_000)
         .with("key.deserializer", StringDeserializer.class.getName())
-        .with("value.deserializer", KafkaJacksonMessageDeserializer.class.getName())
+        .with("value.deserializer", KafkaKryoMessageDeserializer.class.getName())
         .with(KafkaJacksonMessageDeserializer.CONFIG_MAP_PAYLOAD, String.valueOf(false))
         .build();
     final Consumer<String, Message> consumer = kafka.getConsumer(props);
