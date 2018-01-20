@@ -4,7 +4,6 @@ import java.util.*;
 
 import com.obsidiandynamics.blackstrom.*;
 import com.obsidiandynamics.blackstrom.handler.*;
-import com.obsidiandynamics.blackstrom.keyed.*;
 import com.obsidiandynamics.blackstrom.model.*;
 
 public final class ShardedTracer implements Disposable {
@@ -23,19 +22,53 @@ public final class ShardedTracer implements Disposable {
     }
   }
   
-  private final Keyed<Integer, Tracer> tracers = new Keyed<>(shard -> {
-    return new Tracer(LazyFiringStrategy::new, Tracer.class.getSimpleName() + "-shard-[" + shard + "]");
-  });
-
+  private volatile Tracer[] tracers;
+  
+  private final Object lock = new Object();
+  
+  public ShardedTracer() {
+    this(128);
+  }
+  
+  public ShardedTracer(int stripes) {
+    tracers = new Tracer[stripes];
+  }
+  
   public Action begin(MessageContext context, Message message) {
-    final Tracer tracer = tracers.forKey(message.getShard());
+    final Tracer tracer;
+    final int stripe = getStripe(message.getShard());
+    final Tracer existingTracer = tracers[stripe];
+    if (existingTracer != null) {
+      tracer = existingTracer;
+    } else {
+      tracer = getOrSetTracer(stripe);
+    }
+    
     return tracer.begin(new ConfirmTask(context, message.getMessageId()));
+  }
+  
+  private Tracer getOrSetTracer(int stripe) {
+    synchronized (lock) {
+      final Tracer existingTracer = tracers[stripe];
+      if (existingTracer != null) {
+        return existingTracer;
+      } else {
+        final Tracer newTracer = new Tracer(LazyFiringStrategy::new, Tracer.class.getSimpleName() + "-stripe-[" + stripe + "]");
+        tracers[stripe] = newTracer;
+        tracers = tracers; // volatile piggyback
+        return newTracer;
+      }
+    }
+  }
+  
+  private int getStripe(int shard) {
+    final int nonNegativeUnboundedStripe = shard < 0 ? shard + Integer.MAX_VALUE : shard;
+    return nonNegativeUnboundedStripe % tracers.length;
   }
 
   @Override
   public void dispose() {
-    final Collection<Tracer> tracers = this.tracers.asMap().values();
-    tracers.forEach(t -> t.terminate());
-    tracers.forEach(t -> t.joinQuietly());
+    Arrays.stream(tracers).filter(t -> t != null).forEach(t -> t.terminate());
+    Arrays.stream(tracers).filter(t -> t != null).forEach(t -> t.joinQuietly());
   }
 }
