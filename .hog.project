@@ -1,4 +1,4 @@
-build: ./gradlew test cleanIntegrationTest integrationTest --info --stacktrace --no-daemon
+build: ./gradlew test --info --stacktrace --no-daemon
 modules:
 - path: .
   dependencies:
